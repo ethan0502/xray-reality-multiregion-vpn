@@ -1,0 +1,23 @@
+# Podman-backed blue-green backend unit. Deployed twice per node (xray-a.service
+# on 127.0.0.1:1443, xray-b.service on 127.0.0.1:2443) -- copy this file to both
+# names and adjust the config mount + Description accordingly. Docker-based
+# nodes run the equivalent as a bare `docker run --restart unless-stopped`
+# container instead of a systemd-wrapped unit; the podman form is shown here
+# because it needed the extra capability below to bind low ports without root.
+[Unit]
+Description=Xray blue-green backend (loopback 127.0.0.1:<PORT>)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStartPre=-/usr/bin/podman rm -f xray-a
+ExecStart=/usr/bin/podman run --rm --name xray-a --network host --user 0:0 \
+  -v /etc/xray-docker/backends/xray-a.json:/etc/xray/config.json:ro \
+  -v /var/log/xray:/var/log/xray \
+  ghcr.io/xtls/xray-core:26.3.27 run -config /etc/xray/config.json
+ExecStop=/usr/bin/podman stop -t 10 xray-a
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

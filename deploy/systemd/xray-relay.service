@@ -1,0 +1,17 @@
+[Unit]
+Description=Xray relay: entry node -> chained VLESS+REALITY hop -> egress node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStartPre=-/usr/bin/podman rm -f xray-relay
+ExecStart=/usr/bin/podman run --rm --name xray-relay --network host --user 0:0 --cap-add NET_BIND_SERVICE \
+  -v /etc/xray-docker/relay-entry.json:/etc/xray/config.json:ro \
+  -v /var/log/xray:/var/log/xray \
+  ghcr.io/xtls/xray-core:26.3.27 run -config /etc/xray/config.json
+ExecStop=/usr/bin/podman stop -t 10 xray-relay
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -80,7 +80,7 @@ The rollout kept the old listener alive during the transition, migrated client p
 
 ### 2. Zero-downtime blue-green refresh, adapted to two different TCP front doors
 
-Long-lived Xray processes accumulated enough session state that upload throughput measurably degraded over time; a naive periodic restart would drop every live session at once. The fix: two backend processes per node behind a TCP-passthrough front door, one `active`, one `backup`/draining, flipped daily by a script that **never flips to an unverified backend** — it restarts only the standby, TLS-probes it for the borrowed certificate, and only then swaps the active symlink and reloads the front door. Established sessions ride out the old worker generation and drain naturally (Xray's own idle-connection timeout does the rest); a refresh in steady state drops close to zero live sessions. Full design, the nginx `stream{}` block rationale (timeouts, keepalive, why `worker_shutdown_timeout` must stay unset), and the rollback plan are in [`docs/blue-green-deployment.md`](docs/blue-green-deployment.md).
+Long-lived Xray processes accumulated enough session state that upload throughput measurably degraded over time; a naive periodic restart would drop every live session at once. The fix: two backend processes per node behind a TCP-passthrough front door, one `active`, one `backup`/draining, flipped daily by a script that **never flips to an unverified backend** — it restarts only the standby, TLS-probes it for the borrowed certificate, and only then swaps the active symlink and reloads the front door. Established sessions ride out the old worker generation and drain naturally (Xray's own idle-connection timeout does the rest); a refresh in steady state drops close to zero live sessions. Full design, the nginx `stream{}` block rationale (timeouts, keepalive, why `worker_shutdown_timeout` must stay unset), and the rollback plan are in [`docs/blue-green-deployment.md`](docs/blue-green-deployment.md) — the actual flip scripts and front-door configs run in production are in [`deploy/`](deploy/): [nginx](deploy/nginx/) + [Docker](deploy/xray443-flip-nginx-docker.sh) on Node A, [nginx](deploy/nginx/) + [podman](deploy/xray443-flip-nginx-podman.sh) on Node C, [HAProxy](deploy/haproxy/) + [its own flip script](deploy/xray443-flip-haproxy.sh) on Node B, and the [backend generator](deploy/backends/regen-backends.py) that keeps both blue and green backends byte-identical.
 
 ### 3. A real production incident and its root cause
 
@@ -88,7 +88,7 @@ One node's blue-green front door quietly failed after a few days, and the "obvio
 
 ### 4. Cross-region relay chaining for a specific exit IP with better throughput
 
-One node's own peering path from the client's network is poor (a real inter-carrier congestion issue, confirmed by isolating the proxy stack entirely and comparing raw `scp` throughput over the same path), even though that node's own uplink bandwidth is fine. A second node happens to have much better peering *to* the first node. Rather than accept the slow path, traffic is relayed: client → better-peered node (dedicated relay-only inbound, its own REALITY keypair) → re-encapsulated as a raw TCP client of the target node's egress-only fast path → target node's IP. The relay client is a separate, independently revocable credential from normal end-user clients. Root-caused with `traceroute` and paired raw-socket throughput tests before building the relay, not assumed.
+One node's own peering path from the client's network is poor (a real inter-carrier congestion issue, confirmed by isolating the proxy stack entirely and comparing raw `scp` throughput over the same path), even though that node's own uplink bandwidth is fine. A second node happens to have much better peering *to* the first node. Rather than accept the slow path, traffic is relayed: client → better-peered node (dedicated relay-only inbound, its own REALITY keypair) → re-encapsulated as a raw TCP client of the target node's egress-only fast path → target node's IP. The relay client is a separate, independently revocable credential from normal end-user clients. Root-caused with `traceroute` and paired raw-socket throughput tests before building the relay, not assumed. The relay entry's actual Xray config template, systemd unit, and the relay-aware backend generator (which gives each blue-green backend a second, REALITY-free inbound just for the relay's server-to-server leg) are in [`deploy/relay/`](deploy/relay/), [`deploy/systemd/xray-relay.service`](deploy/systemd/xray-relay.service), and [`deploy/backends/regen-backends-with-relay.py`](deploy/backends/regen-backends-with-relay.py).
 
 ### 5. A small, safe Python control-plane CLI
 
@@ -105,21 +105,30 @@ One node's own peering path from the client's network is poor (a real inter-carr
 ├── vpn_user_manager.py            # add/list/remove REALITY clients over SSH
 ├── update_profile.py              # compile per-client routing policy into Xray config
 ├── convert_to_clash.py            # Shadowrocket rule-list -> Clash rules: YAML
-├── xray_docker_config.example.json  # config template (placeholder keys/UUIDs)
-└── docs/
-    ├── architecture.md            # per-node runtime inventory + the OOM/logrotate RCA
-    ├── upgrade-log.md             # the DPI-hardening before/after, with diagrams
-    ├── blue-green-deployment.md   # the zero-downtime refresh design in full
-    └── client-setup-guide.md      # the plain-language guide given to non-technical users
+├── xray_docker_config.example.json  # source-of-truth config template (placeholder keys/UUIDs)
+├── docs/
+│   ├── architecture.md            # per-node runtime inventory + the OOM/logrotate RCA
+│   ├── upgrade-log.md             # the DPI-hardening before/after, with diagrams
+│   ├── blue-green-deployment.md   # the zero-downtime refresh design in full
+│   └── client-setup-guide.md      # the plain-language guide given to non-technical users
+└── deploy/                        # the actual artifacts each node runs, sanitized in place
+    ├── nginx/                     # stream front-door config (Node A / Node C)
+    ├── haproxy/                   # TCP front-door config (Node B)
+    ├── systemd/                   # podman-wrapped backend + relay unit templates
+    ├── backends/                  # config generators (plain + relay-aware variants)
+    ├── relay/                     # relay entry node's Xray config template
+    ├── xray443-flip-nginx-docker.sh   # daily flip, Node A (Docker)
+    ├── xray443-flip-nginx-podman.sh   # daily flip, Node C (podman)
+    └── xray443-flip-haproxy.sh        # daily flip, Node B (HAProxy)
 ```
 
 ## Quickstart (adapting this to your own deployment)
 
 This repo is a template, not a turnkey installer — REALITY deployments are inherently host-specific (which front-door technology is even installable depends on what your provider's control panel already owns). To stand up something similar:
 
-1. Generate a fresh REALITY keypair (`xray x25519`) and a fresh set of high-entropy `shortId`s — never reuse the placeholder values in [`xray_docker_config.example.json`](xray_docker_config.example.json).
+1. Generate a fresh REALITY keypair (`xray x25519`) and a fresh set of high-entropy `shortId`s — never reuse the placeholder values in [`xray_docker_config.example.json`](xray_docker_config.example.json) or anything under [`deploy/`](deploy/).
 2. Pick an SNI you camouflage as: a mainstream site that serves TLS 1.3 and that Xray doesn't warn about.
-3. Deploy the config with whatever TCP-passthrough front door your host actually supports (see [`docs/blue-green-deployment.md`](docs/blue-green-deployment.md) for the nginx `stream{}` version and the HAProxy equivalent).
+3. Deploy the config with whatever TCP-passthrough front door your host actually supports — [`deploy/nginx/`](deploy/nginx/) + [`deploy/xray443-flip-nginx-docker.sh`](deploy/xray443-flip-nginx-docker.sh)/[`-podman.sh`](deploy/xray443-flip-nginx-podman.sh), or [`deploy/haproxy/`](deploy/haproxy/) + [`deploy/xray443-flip-haproxy.sh`](deploy/xray443-flip-haproxy.sh) if nginx's stream module isn't available. Design rationale for every setting is in [`docs/blue-green-deployment.md`](docs/blue-green-deployment.md).
 4. Point `vpn_user_manager.py --host <your-host> --user <your-ssh-user>` at it to manage clients.
 
 ## Security notes — what was redacted

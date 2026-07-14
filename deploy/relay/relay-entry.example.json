@@ -1,0 +1,81 @@
+{
+  "_comment": "Template. Placeholder key/UUIDs/IP -- generate your own before use. See docs/architecture.md 'Cross-region relay chaining'.",
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "tag": "chain-in",
+      "listen": "0.0.0.0",
+      "port": 8443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [
+          {
+            "id": "<RELAY_ENTRY_CLIENT_UUID>",
+            "flow": "xtls-rprx-vision",
+            "email": "relay-entry"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "dest": "example-relay-cdn.com:443",
+          "serverNames": [
+            "example-relay-cdn.com"
+          ],
+          "privateKey": "<REALITY_PRIVATE_KEY_RELAY>",
+          "shortIds": [
+            "<SHORT_ID_RELAY>"
+          ]
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "to-egress-node",
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "203.0.113.20",
+            "port": 2096,
+            "users": [
+              {
+                "id": "<JP_RELAY_CLIENT_UUID>",
+                "encryption": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "none"
+      }
+    },
+    {
+      "tag": "direct",
+      "protocol": "freedom"
+    },
+    {
+      "tag": "block",
+      "protocol": "blackhole"
+    }
+  ],
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "inboundTag": [
+          "chain-in"
+        ],
+        "outboundTag": "to-egress-node"
+      }
+    ]
+  }
+}
