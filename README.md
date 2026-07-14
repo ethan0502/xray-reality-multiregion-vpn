@@ -116,6 +116,20 @@ Real repeated-run speed tests from a client on the operator's own LAN, one node 
 
 The headline result is the **relay row**: routing Malaysia-exit traffic *through* the better-peered Japan node roughly doubles direct-Malaysia download throughput (1.60 vs 0.70–0.87 MiB/s) while keeping the Malaysia exit IP the client actually needs — the measured payoff of the cross-region relay chaining described in Highlight #4. It's a real improvement, not a full fix: the client's own international path to the relay entry point remains the dominant bottleneck. Full methodology, per-node variance, the raw data files, and the caveats (upload endpoint noise, harness latency overhead, small sample size) are in [`benchmarks/`](benchmarks/README.md).
 
+### Upload throughput around the blue-green cutover
+
+A separate, real-world data point: three Ookla Speedtest runs from a phone on 5G through the Tokyo node's exit, spanning the exact hour the blue-green front door went live. Timestamps are cross-checked against the node's own deployment artifacts — the front-door config files were written at `2026-07-08 04:14–04:15 GMT`, and the flip log records the first successful blue-green flip completing at `04:17:56 GMT`.
+
+![Upload throughput across three real Speedtest runs](benchmarks/upload-recovery.svg)
+
+| Time (GMT) | Download | Upload | Relative to deployment |
+|---|---|---|---|
+| 2026-07-07 19:11 | 84.0 Mbps | **4.1 Mbps** | before |
+| 2026-07-07 23:07 | 88.4 Mbps | 53.6 Mbps | before |
+| 2026-07-08 04:21 | 82.8 Mbps | 45.9 Mbps | **+3 min after first flip** |
+
+Download stayed in the same 83–88 Mbps band across all three runs — this was specifically an upload problem, not a general connection problem. The honest read of the three points: pre-deployment upload wasn't a flat failure, it *swung* between ~4 and ~54 Mbps within the same evening, which lines up with the degradation mechanism documented in [`docs/blue-green-deployment.md`](docs/blue-green-deployment.md#motivation) — throughput sags the longer the serving process has been running without a restart, and a session that happened to be fresher tested far better even before blue-green existed. What blue-green actually buys isn't "a number no manual restart could reach" — a lucky pre-deployment test already hit 53.6 Mbps — it's making that good state the **guaranteed steady-state** every day, instead of something that depends on when you happen to test relative to the last restart.
+
 ## Repository layout
 
 ```

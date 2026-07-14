@@ -25,12 +25,17 @@ This data was collected with the blue-green front door already live on every nod
 
 ![Average throughput and latency per node](avg-bar.svg)
 
+## Upload throughput around the blue-green cutover (Tokyo)
+
+A separate real-world data point, unrelated to the repeated-run test above: three Ookla Speedtest runs from a phone on 5G through the Tokyo node's exit, spanning the hour the blue-green front door went live there. See the root [README's version of this section](../README.md#upload-throughput-around-the-blue-green-cutover) for the full table and chart, and [`docs/blue-green-deployment.md`](../docs/blue-green-deployment.md#motivation) for the degradation mechanism this is a real-world instance of. Timestamps were cross-checked against the node's own deployment artifacts (config file mtimes, flip log) rather than taken at face value.
+
 ## Files in this folder
 
 | File | What it is |
 |---|---|
-| [`summary.csv`](summary.csv) | Compact per-node summary (download/upload/latency averages). |
-| [`summary.json`](summary.json) | Structured summary with per-node averages and medians. |
+| [`summary.csv`](summary.csv) | Compact per-node summary (download/upload/latency averages), repeated-run test. |
+| [`summary.json`](summary.json) | Structured summary with per-node averages and medians, repeated-run test. |
+| [`upload-recovery.svg`](upload-recovery.svg) | The three-point Tokyo upload chart above. |
 | [`avg-bar.svg`](avg-bar.svg) | Average download, upload, and latency bar chart. |
 | [`run-variability.svg`](run-variability.svg) | Run-to-run spread across the 3 repeats per node. |
 
